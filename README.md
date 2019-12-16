@@ -1,0 +1,1 @@
+# mma-service-netcore
