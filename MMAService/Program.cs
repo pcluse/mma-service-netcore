@@ -24,9 +24,10 @@ namespace MMAService
         private static bool SharedPC = Computer.IsSharedPC();
         private static bool isTest = false;
         private static Timer timer = new Timer();
+        private static Timer netTimer = new Timer();
         private static string TemporaryAdmin = "";
         private static DateTime DontCleanUpBefore;
-        private static int NetworkWaitSeconds = 5;
+        private static bool netOK = false;
 
 
         public static void Main(string[] args)
@@ -48,12 +49,7 @@ namespace MMAService
             {
                 logger.LogWarning("Running as test");
             }
-            // Make sure we have netowrk before operation starts
-            while (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable()) { 
-                logger.LogInformation((string.Format("Network is not available, wait {0} seconds...",(NetworkWaitSeconds))));
-                //Task.Delay(NetworkWaitMilliseconds).Wait();
-                System.Threading.Thread.Sleep(new TimeSpan(0, 0, NetworkWaitSeconds));
-            }
+
             if (isService)
             {
                 try
@@ -117,16 +113,29 @@ namespace MMAService
 
         internal static void OnStart()
         {
+            netTimer.Elapsed += new ElapsedEventHandler(CheckNetwork);
+            netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds) 
+            netTimer.Enabled = true;
 
             timer.Elapsed += new ElapsedEventHandler(OnElapsedTime);
-            timer.Interval = 60 * 5000; //number in milliseconds (every 5 minutes) 
+            timer.Interval = 60 * 5 * 1000; //number in milliseconds (every 5 minutes) 
             timer.Enabled = true;
 
             // TODO - Add a function named PrecheckService which makes sure everything is available at runtime
             MMAVars = new CCMCollectionVariables(isTest);
             CleanupAdminGroup();
         }
-
+        internal static void CheckNetwork(object source, ElapsedEventArgs e) {
+            // Make sure we have netowrk before operation starts
+            netOK = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
+            if (netOK) {
+                netTimer.Interval = 60 * 5 * 1000; //number in milliseconds (every 5 minutes)
+            }
+            else {
+                netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds)
+            }
+            logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
+        }
         internal static bool IsAdminPossible() {
 
             var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
@@ -337,6 +346,9 @@ namespace MMAService
                 // First one in list should be owner, maybe change GetPrimaryUsers to GetOwner?
                 logger.LogWarning("User {0} tried to become admin but was denied because the user is not the owner of this computer.", user);
                 return (false, String.Format("Only the user set as owner can become admin of this computer.\nCurrent owner is {0}.", owners[0]));
+            }
+            if (!netOK) {
+                return (false, "Network is not available right now.\nTry again when network connectivity has been restored.");
             }
             return (true, "");
         }
