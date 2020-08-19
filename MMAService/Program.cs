@@ -14,6 +14,7 @@ using System.Timers;
 using System.Net;
 using System.Net.Sockets;
 
+
 namespace MMAService
 {
     public class Program
@@ -21,7 +22,7 @@ namespace MMAService
         private static RestClient client;
         internal static ILogger logger;
         internal static CCMCollectionVariables MMAVars;
-        private static bool SharedPC = Computer.IsSharedPC();
+        private static bool SharedPC = false;
         private static bool isTest = false;
         private static Timer timer = new Timer();
         private static Timer netTimer = new Timer();
@@ -113,6 +114,14 @@ namespace MMAService
 
         internal static void OnStart()
         {
+            try {
+                SharedPC = Computer.IsSharedPC();
+            }
+            catch (System.Management.ManagementException e)
+            {
+                logger.LogError("Checking SharedPCMode failed :{0}", e.Message);
+            }
+
             netTimer.Elapsed += new ElapsedEventHandler(CheckNetwork);
             netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds) 
             netTimer.Enabled = true;
@@ -137,46 +146,51 @@ namespace MMAService
             logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
         }
         internal static bool IsAdminPossible() {
+            try {
+                var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
+                switch (MMAClientEnabled)
+                {
+                    case null:
+                        logger.LogWarning("MMAClientEnabled is not set");
+                        return false;
+                    case "0":
+                        logger.LogWarning("Make me admin client has not been enabled for this computer");
+                        return false;
+                    case "1":
+                        logger.LogWarning("Make me admin client is enabled for this computer");
+                        break;
+                    default:
+                        logger.LogError("MMAClientEnabled = '{0}' is not a valid value", MMAClientEnabled);
+                        break;
+                }
 
-            var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
-            switch (MMAClientEnabled)
-            {
-                case null:
-                    logger.LogWarning("MMAClientEnabled is not set");
+                var MMAServer = MMAVars.Get("MMAServer");
+                if (String.IsNullOrEmpty(MMAServer))
+                {
+                    logger.LogWarning("MMAServer not set");
                     return false;
-                case "0":
-                    logger.LogWarning("Make me admin client has not been enabled for this computer");
+                }
+                
+                var MMAApiKey = MMAVars.Get("MMAApiKey");
+                if (String.IsNullOrEmpty(MMAApiKey))
+                {
+                    logger.LogWarning("MMAApiKey not set");
                     return false;
-                case "1":
-                    logger.LogWarning("Make me admin client is enabled for this computer");
-                    break;
-                default:
-                    logger.LogError("MMAClientEnabled = '{0}' is not a valid value", MMAClientEnabled);
-                    break;
-            }
+                }
+                
+                var MMAServerThumbprint = MMAVars.Get("MMAServerThumbprint");
+                if (String.IsNullOrEmpty(MMAServerThumbprint))
+                {
+                    logger.LogWarning("MMAServerThumbprint not set");
+                    return false;
+                }
 
-            var MMAServer = MMAVars.Get("MMAServer");
-            if (String.IsNullOrEmpty(MMAServer))
-            {
-                logger.LogWarning("MMAServer not set");
+                client = new RestClient("https://" + MMAServer, MMAServerThumbprint, MMAApiKey);
+            }
+            catch (System.Management.ManagementException me) {
+                logger.LogError(me.Message);
                 return false;
             }
-            
-            var MMAApiKey = MMAVars.Get("MMAApiKey");
-            if (String.IsNullOrEmpty(MMAApiKey))
-            {
-                logger.LogWarning("MMAApiKey not set");
-                return false;
-            }
-            
-            var MMAServerThumbprint = MMAVars.Get("MMAServerThumbprint");
-            if (String.IsNullOrEmpty(MMAServerThumbprint))
-            {
-                logger.LogWarning("MMAServerThumbprint not set");
-                return false;
-            }
-
-            client = new RestClient("https://" + MMAServer, MMAServerThumbprint, MMAApiKey);
             return true;
         }
 
@@ -191,7 +205,6 @@ namespace MMAService
 
         internal static void CleanupAdminGroup()
         {
-
             var group = MMAVars.Get("MMALocalAdminGroup");
             
             if (String.IsNullOrEmpty(group))
@@ -367,7 +380,7 @@ namespace MMAService
             var taskCheckTFA = client.CheckTFA(user);
 
             try
-            {
+        {
                 var checkLucatAdmin = taskCheckLucatAdmin.GetAwaiter().GetResult();
                 if (!checkLucatAdmin)
                 {

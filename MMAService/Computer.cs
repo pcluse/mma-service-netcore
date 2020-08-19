@@ -137,14 +137,7 @@ namespace MMAService
             // Define the query for shared pc mode
             var query = new ObjectQuery("SELECT * FROM MDM_SharedPC");
             // create the search for shared pc mode
-            var searcher = new ManagementObjectSearcher(scope, query);
-
-
-            // Strange this returns one row then run as service
-            // And gettting a value returns null
-            // But Get-WMIObject shows nothing (JD)
-            try
-            {
+            using (var searcher = new ManagementObjectSearcher(scope, query)) {
                 foreach (ManagementObject row in searcher.Get())
                 {
                     var value = row["EnableSharedPCMode"];
@@ -157,29 +150,8 @@ namespace MMAService
                     }
                 }
             }
-            catch { }
             return result;
         }
-
-        /*
-         * gwmi -Namespace 'root\ccm\Policy\Machine' -Class CCM_UserAffinity
-            __GENUS              : 2
-            __CLASS              : CCM_UserAffinity
-            __SUPERCLASS         : CCM_Policy
-            __DYNASTY            : CCM_Policy
-            __RELPATH            : CCM_UserAffinity.ConsoleUser="<domain>\<username>"
-            __PROPERTY_COUNT     : 5
-            __DERIVATION         : {CCM_Policy}
-            __SERVER             : <computername>
-            __NAMESPACE          : root\ccm\Policy\Machine
-            __PATH               : \\COMPUTERNAME\root\ccm\Policy\Machine:CCM_UserAffinity.ConsoleUser="<domain>\<username>"
-            ApprovedAffinityList : {1}
-            ConsoleUser          : <domain>\<username>
-            IsAutoAffinity       : True
-            IsUserAffinitySet    : True
-            UserPrompted         : False
-            PSComputerName       : <computername>
-        */
 
         public static List<string> GetPrimaryUsers()
         {
@@ -188,21 +160,12 @@ namespace MMAService
             // Define the query for shared pc mode
             var query = new ObjectQuery("SELECT * FROM CCM_UserAffinity");
             // create the search for shared pc mode
-            var searcher = new ManagementObjectSearcher(scope, query);
-
-            // This try/catch has been moved to where we call this function to be able to give the user information / log it
-            //try {
+            using (var searcher = new ManagementObjectSearcher(scope, query)) {
                 foreach (ManagementObject row in searcher.Get())
                 {
                     users.Add(((string)row["ConsoleUser"]).ToUpper());
                 }
-            //}
-            //catch (ManagementException e) {
-                // Invalid namespace 
-                // ??? This was thrown on the foreach while
-                // Testing on computer not connected to AD and SCCM
-                // This is because the SCCM-agent installs this namespace. this state should set AdminPossible = false or shutdown the service. /Robert
-            //}
+            }
             return users;
         }
     }

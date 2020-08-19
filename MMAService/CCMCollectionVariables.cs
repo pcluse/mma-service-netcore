@@ -73,21 +73,16 @@ namespace MMAService
             // Define the query for collection variables
             var query = new ObjectQuery(String.Format("SELECT * FROM CCM_CollectionVariable WHERE Name = \"{0}\"", name));
             // create the search for collection variables
-            var searcher = new ManagementObjectSearcher(Scope, query);
-
-            try
-            {
+            
+            // https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/using-statement
+            string retValue = string.Empty;
+            using (var searcher = new ManagementObjectSearcher(Scope, query)) {
                 foreach (ManagementObject v in searcher.Get())
                 {
-                        return (string)(v["value"]);
+                        retValue = (string)(v["value"]);
                 }
             }
-            catch (ManagementException)
-            {
-                // Invalid namespace - maybe only on non SCCM machines
-                // Maybe fall back to registry values to be able to use this on non-sccm machines? /Robert
-            }
-            return null;
+            return retValue;
         }
 
         public string Get(string name)
