@@ -205,77 +205,82 @@ namespace MMAService
 
         internal static void CleanupAdminGroup()
         {
-            var group = MMAVars.Get("MMALocalAdminGroup");
-            
-            if (String.IsNullOrEmpty(group))
-            {
-                // Empty should generate information
-                // Variable missing should generate error
-                logger.LogError("Something is wrong with MMALocalAdminGroup, either it is not present or it is empty.");
-                return;
-            }
-
-            // If TemporaryAdmin is set, delete it first
-            int ret;
-            if (TemporaryAdmin != "")
-            {
-                ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, TemporaryAdmin);
+            try {
+                var group = MMAVars.Get("MMALocalAdminGroup");
                 
-                if (ret == 0)
+                if (String.IsNullOrEmpty(group))
                 {
-                    logger.LogInformation("Deleted {0} from {1}", TemporaryAdmin, LocalGroup.AdminGroupName);
+                    // Empty should generate information
+                    // Variable missing should generate error
+                    logger.LogError("Something is wrong with MMALocalAdminGroup, either it is not present or it is empty.");
+                    return;
                 }
-                else
-                {
-                    logger.LogError("Error #{0} deleting {1} from {2}", ret, TemporaryAdmin, LocalGroup.AdminGroupName);
-                }
-                TemporaryAdmin = "";
-            }
 
-            // Delete the others
-            bool groupIsMember = false;
-            var members = LocalGroup.GetMembers(LocalGroup.AdminGroupName);
-            foreach (var member in members)
-            {
-                if (member == LocalGroup.AdminUserName)
+                // If TemporaryAdmin is set, delete it first
+                int ret;
+                if (TemporaryAdmin != "")
                 {
-                    // Do nothing
-                }
-                else if (member == group)
-                {
-                    groupIsMember = true;
-                }
-                else
-                {
-                    ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, member);
+                    ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, TemporaryAdmin);
+                    
                     if (ret == 0)
                     {
-                        logger.LogInformation("Deleted {0} from {1}", member, LocalGroup.AdminGroupName);
+                        logger.LogInformation("Deleted {0} from {1}", TemporaryAdmin, LocalGroup.AdminGroupName);
                     }
                     else
                     {
-                        logger.LogError("Error #{0} deleting {1} from {2}", ret, member, LocalGroup.AdminGroupName);
-                    }                       
+                        logger.LogError("Error #{0} deleting {1} from {2}", ret, TemporaryAdmin, LocalGroup.AdminGroupName);
+                    }
+                    TemporaryAdmin = "";
                 }
-            }
 
-            if (!groupIsMember)
-            {
-                // Make sure that the centrally controlled group is a member of Administrators
-                // Try to add it and if successfull report it
-                ret = LocalGroup.AddMember(LocalGroup.AdminGroupName, group);
-                if (ret == 0)
+                // Delete the others
+                bool groupIsMember = false;
+                var members = LocalGroup.GetMembers(LocalGroup.AdminGroupName);
+                foreach (var member in members)
                 {
-                    logger.LogInformation("Added {0} to {1}.", group, LocalGroup.AdminGroupName);
+                    if (member == LocalGroup.AdminUserName)
+                    {
+                        // Do nothing
+                    }
+                    else if (member == group)
+                    {
+                        groupIsMember = true;
+                    }
+                    else
+                    {
+                        ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, member);
+                        if (ret == 0)
+                        {
+                            logger.LogInformation("Deleted {0} from {1}", member, LocalGroup.AdminGroupName);
+                        }
+                        else
+                        {
+                            logger.LogError("Error #{0} deleting {1} from {2}", ret, member, LocalGroup.AdminGroupName);
+                        }                       
+                    }
                 }
-                else if (ret == 1378)
+
+                if (!groupIsMember)
                 {
-                    logger.LogInformation("Group {0} is already a member of {1}.", group, LocalGroup.AdminGroupName);
+                    // Make sure that the centrally controlled group is a member of Administrators
+                    // Try to add it and if successfull report it
+                    ret = LocalGroup.AddMember(LocalGroup.AdminGroupName, group);
+                    if (ret == 0)
+                    {
+                        logger.LogInformation("Added {0} to {1}.", group, LocalGroup.AdminGroupName);
+                    }
+                    else if (ret == 1378)
+                    {
+                        logger.LogInformation("Group {0} is already a member of {1}.", group, LocalGroup.AdminGroupName);
+                    }
+                    else
+                    {
+                        logger.LogError("Failed to add {0} to {1} with errorcode {2}.", group, LocalGroup.AdminGroupName, ret);
+                    }
                 }
-                else
-                {
-                    logger.LogError("Failed to add {0} to {1} with errorcode {2}.", group, LocalGroup.AdminGroupName, ret);
-                }
+            } catch (System.Management.ManagementException me) {
+                logger.LogError(me.Message);
+                return;
             }
         }
 
