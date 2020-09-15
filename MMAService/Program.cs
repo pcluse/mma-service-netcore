@@ -143,7 +143,9 @@ namespace MMAService
             else {
                 netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds)
             }
-            logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
+            if (isTest) {
+                logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
+            }
         }
         internal static bool IsAdminPossible() {
             try {
@@ -206,6 +208,7 @@ namespace MMAService
         internal static void CleanupAdminGroup()
         {
             try {
+
                 var group = MMAVars.Get("MMALocalAdminGroup");
                 
                 if (String.IsNullOrEmpty(group))
@@ -280,6 +283,9 @@ namespace MMAService
                 }
             } catch (System.Management.ManagementException me) {
                 logger.LogError(me.Message);
+                return;
+            } catch (System.Exception e) {
+                logger.LogError(e.Message);
                 return;
             }
         }

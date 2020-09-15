@@ -133,19 +133,16 @@ namespace MMAService
         {
             var result = false;
 
-            var scope = new ManagementScope(@"\\.\root\cimv2\mdm\dmmap");
-            // Define the query for shared pc mode
-            var query = new ObjectQuery("SELECT * FROM MDM_SharedPC");
-            // create the search for shared pc mode
-            using (var searcher = new ManagementObjectSearcher(scope, query)) {
+            using (var searcher = new ManagementObjectSearcher(@"\\.\root\cimv2\mdm\dmmap", "SELECT * FROM MDM_SharedPC",new EnumerationOptions() { Timeout = new TimeSpan(0,0,15)})) {
                 foreach (ManagementObject row in searcher.Get())
                 {
-                    var value = row["EnableSharedPCMode"];
-                    if (value != null)
-                    {
-                        if ((bool)value)
+                    using (var value = row) {
+                        if (value["EnableSharedPCMode"] != null)
                         {
-                            result = true;
+                            if ((bool)value["EnableSharedPCMode"])
+                            {
+                                result = true;
+                            }
                         }
                     }
                 }
@@ -156,14 +153,13 @@ namespace MMAService
         public static List<string> GetPrimaryUsers()
         {
             var users = new List<string>();
-            var scope = new ManagementScope(@"\\.\root\ccm\Policy\Machine");
-            // Define the query for shared pc mode
-            var query = new ObjectQuery("SELECT * FROM CCM_UserAffinity");
             // create the search for shared pc mode
-            using (var searcher = new ManagementObjectSearcher(scope, query)) {
+            using (var searcher = new ManagementObjectSearcher(@"\\.\root\ccm\Policy\Machine", "SELECT * FROM CCM_UserAffinity",new EnumerationOptions() { Timeout = new TimeSpan(0,0,15)})) {
                 foreach (ManagementObject row in searcher.Get())
                 {
-                    users.Add(((string)row["ConsoleUser"]).ToUpper());
+                    using (var consoleUser = row) {
+                        users.Add(consoleUser["ConsoleUser"].ToString().ToUpper());
+                    }
                 }
             }
             return users;
