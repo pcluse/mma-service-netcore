@@ -27,7 +27,6 @@ namespace MMAService
             }
         }
 
-        private readonly ManagementScope Scope = new ManagementScope(@"\\.\root\ccm\Policy\Machine\ActualConfig");
         private Dictionary<string, CCMCollectionVariable> Variables;
         private bool isTest = false;
 
@@ -70,28 +69,30 @@ namespace MMAService
         }
 
         private string GetProtectedValue(string name) {
+            //ManagementScope Scope = new ManagementScope(@"root\ccm\Policy\Machine\ActualConfig");
             // Define the query for collection variables
-            var query = new ObjectQuery(String.Format("SELECT * FROM CCM_CollectionVariable WHERE Name = \"{0}\"", name));
+            //var query = new ObjectQuery(String.Format("SELECT * FROM CCM_CollectionVariable WHERE Name = \"{0}\"", name));
             // create the search for collection variables
-            var searcher = new ManagementObjectSearcher(Scope, query);
-
-            try
-            {
+            
+            // https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/using-statement
+            // https://support.microsoft.com/en-us/help/3124914/wmi-activity-event-5858-logged-frequently-with-resultcode-0x80041032
+            
+            string retValue = string.Empty;
+            using (var searcher = new ManagementObjectSearcher(@"root\ccm\Policy\Machine\ActualConfig", String.Format("SELECT * FROM CCM_CollectionVariable WHERE Name = \"{0}\"", name),new EnumerationOptions() { Timeout = new TimeSpan(0,0,15)})) {
                 foreach (ManagementObject v in searcher.Get())
                 {
-                        return (string)(v["value"]);
+                    using (var value = v) {
+                        retValue = value["value"].ToString();
+                    }
                 }
             }
-            catch (ManagementException)
-            {
-                // Invalid namespace - maybe only on non SCCM machines
-                // Maybe fall back to registry values to be able to use this on non-sccm machines? /Robert
-            }
-            return null;
+            //Scope = null;
+            System.GC.Collect();
+            return retValue;
         }
 
         public string Get(string name)
-        {
+        { 
             if (isTest)
             {
                 if (Variables.ContainsKey(name))

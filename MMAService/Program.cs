@@ -14,6 +14,7 @@ using System.Timers;
 using System.Net;
 using System.Net.Sockets;
 
+
 namespace MMAService
 {
     public class Program
@@ -21,7 +22,7 @@ namespace MMAService
         private static RestClient client;
         internal static ILogger logger;
         internal static CCMCollectionVariables MMAVars;
-        private static bool SharedPC = Computer.IsSharedPC();
+        private static bool SharedPC = false;
         private static bool isTest = false;
         private static Timer timer = new Timer();
         private static Timer netTimer = new Timer();
@@ -113,6 +114,14 @@ namespace MMAService
 
         internal static void OnStart()
         {
+            try {
+                SharedPC = Computer.IsSharedPC();
+            }
+            catch (System.Management.ManagementException e)
+            {
+                logger.LogError("Checking SharedPCMode failed :{0}", e.Message);
+            }
+
             netTimer.Elapsed += new ElapsedEventHandler(CheckNetwork);
             netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds) 
             netTimer.Enabled = true;
@@ -134,49 +143,56 @@ namespace MMAService
             else {
                 netTimer.Interval = 5 * 1000; //number in milliseconds (every 5 seconds)
             }
-            logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
+            if (isTest) {
+                logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
+            }
         }
         internal static bool IsAdminPossible() {
+            try {
+                var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
+                switch (MMAClientEnabled)
+                {
+                    case null:
+                        logger.LogWarning("MMAClientEnabled is not set");
+                        return false;
+                    case "0":
+                        logger.LogWarning("Make me admin client has not been enabled for this computer");
+                        return false;
+                    case "1":
+                        logger.LogWarning("Make me admin client is enabled for this computer");
+                        break;
+                    default:
+                        logger.LogError("MMAClientEnabled = '{0}' is not a valid value", MMAClientEnabled);
+                        break;
+                }
 
-            var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
-            switch (MMAClientEnabled)
-            {
-                case null:
-                    logger.LogWarning("MMAClientEnabled is not set");
+                var MMAServer = MMAVars.Get("MMAServer");
+                if (String.IsNullOrEmpty(MMAServer))
+                {
+                    logger.LogWarning("MMAServer not set");
                     return false;
-                case "0":
-                    logger.LogWarning("Make me admin client has not been enabled for this computer");
+                }
+                
+                var MMAApiKey = MMAVars.Get("MMAApiKey");
+                if (String.IsNullOrEmpty(MMAApiKey))
+                {
+                    logger.LogWarning("MMAApiKey not set");
                     return false;
-                case "1":
-                    logger.LogWarning("Make me admin client is enabled for this computer");
-                    break;
-                default:
-                    logger.LogError("MMAClientEnabled = '{0}' is not a valid value", MMAClientEnabled);
-                    break;
-            }
+                }
+                
+                var MMAServerThumbprint = MMAVars.Get("MMAServerThumbprint");
+                if (String.IsNullOrEmpty(MMAServerThumbprint))
+                {
+                    logger.LogWarning("MMAServerThumbprint not set");
+                    return false;
+                }
 
-            var MMAServer = MMAVars.Get("MMAServer");
-            if (String.IsNullOrEmpty(MMAServer))
-            {
-                logger.LogWarning("MMAServer not set");
+                client = new RestClient("https://" + MMAServer, MMAServerThumbprint, MMAApiKey);
+            }
+            catch (System.Management.ManagementException me) {
+                logger.LogError(me.Message);
                 return false;
             }
-            
-            var MMAApiKey = MMAVars.Get("MMAApiKey");
-            if (String.IsNullOrEmpty(MMAApiKey))
-            {
-                logger.LogWarning("MMAApiKey not set");
-                return false;
-            }
-            
-            var MMAServerThumbprint = MMAVars.Get("MMAServerThumbprint");
-            if (String.IsNullOrEmpty(MMAServerThumbprint))
-            {
-                logger.LogWarning("MMAServerThumbprint not set");
-                return false;
-            }
-
-            client = new RestClient("https://" + MMAServer, MMAServerThumbprint, MMAApiKey);
             return true;
         }
 
@@ -191,78 +207,86 @@ namespace MMAService
 
         internal static void CleanupAdminGroup()
         {
+            try {
 
-            var group = MMAVars.Get("MMALocalAdminGroup");
-            
-            if (String.IsNullOrEmpty(group))
-            {
-                // Empty should generate information
-                // Variable missing should generate error
-                logger.LogError("Something is wrong with MMALocalAdminGroup, either it is not present or it is empty.");
-                return;
-            }
-
-            // If TemporaryAdmin is set, delete it first
-            int ret;
-            if (TemporaryAdmin != "")
-            {
-                ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, TemporaryAdmin);
+                var group = MMAVars.Get("MMALocalAdminGroup");
                 
-                if (ret == 0)
+                if (String.IsNullOrEmpty(group))
                 {
-                    logger.LogInformation("Deleted {0} from {1}", TemporaryAdmin, LocalGroup.AdminGroupName);
+                    // Empty should generate information
+                    // Variable missing should generate error
+                    logger.LogError("Something is wrong with MMALocalAdminGroup, either it is not present or it is empty.");
+                    return;
                 }
-                else
-                {
-                    logger.LogError("Error #{0} deleting {1} from {2}", ret, TemporaryAdmin, LocalGroup.AdminGroupName);
-                }
-                TemporaryAdmin = "";
-            }
 
-            // Delete the others
-            bool groupIsMember = false;
-            var members = LocalGroup.GetMembers(LocalGroup.AdminGroupName);
-            foreach (var member in members)
-            {
-                if (member == LocalGroup.AdminUserName)
+                // If TemporaryAdmin is set, delete it first
+                int ret;
+                if (TemporaryAdmin != "")
                 {
-                    // Do nothing
-                }
-                else if (member == group)
-                {
-                    groupIsMember = true;
-                }
-                else
-                {
-                    ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, member);
+                    ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, TemporaryAdmin);
+                    
                     if (ret == 0)
                     {
-                        logger.LogInformation("Deleted {0} from {1}", member, LocalGroup.AdminGroupName);
+                        logger.LogInformation("Deleted {0} from {1}", TemporaryAdmin, LocalGroup.AdminGroupName);
                     }
                     else
                     {
-                        logger.LogError("Error #{0} deleting {1} from {2}", ret, member, LocalGroup.AdminGroupName);
-                    }                       
+                        logger.LogError("Error #{0} deleting {1} from {2}", ret, TemporaryAdmin, LocalGroup.AdminGroupName);
+                    }
+                    TemporaryAdmin = "";
                 }
-            }
 
-            if (!groupIsMember)
-            {
-                // Make sure that the centrally controlled group is a member of Administrators
-                // Try to add it and if successfull report it
-                ret = LocalGroup.AddMember(LocalGroup.AdminGroupName, group);
-                if (ret == 0)
+                // Delete the others
+                bool groupIsMember = false;
+                var members = LocalGroup.GetMembers(LocalGroup.AdminGroupName);
+                foreach (var member in members)
                 {
-                    logger.LogInformation("Added {0} to {1}.", group, LocalGroup.AdminGroupName);
+                    if (member == LocalGroup.AdminUserName)
+                    {
+                        // Do nothing
+                    }
+                    else if (member == group)
+                    {
+                        groupIsMember = true;
+                    }
+                    else
+                    {
+                        ret = LocalGroup.DeleteMember(LocalGroup.AdminGroupName, member);
+                        if (ret == 0)
+                        {
+                            logger.LogInformation("Deleted {0} from {1}", member, LocalGroup.AdminGroupName);
+                        }
+                        else
+                        {
+                            logger.LogError("Error #{0} deleting {1} from {2}", ret, member, LocalGroup.AdminGroupName);
+                        }                       
+                    }
                 }
-                else if (ret == 1378)
+
+                if (!groupIsMember)
                 {
-                    logger.LogInformation("Group {0} is already a member of {1}.", group, LocalGroup.AdminGroupName);
+                    // Make sure that the centrally controlled group is a member of Administrators
+                    // Try to add it and if successfull report it
+                    ret = LocalGroup.AddMember(LocalGroup.AdminGroupName, group);
+                    if (ret == 0)
+                    {
+                        logger.LogInformation("Added {0} to {1}.", group, LocalGroup.AdminGroupName);
+                    }
+                    else if (ret == 1378)
+                    {
+                        logger.LogInformation("Group {0} is already a member of {1}.", group, LocalGroup.AdminGroupName);
+                    }
+                    else
+                    {
+                        logger.LogError("Failed to add {0} to {1} with errorcode {2}.", group, LocalGroup.AdminGroupName, ret);
+                    }
                 }
-                else
-                {
-                    logger.LogError("Failed to add {0} to {1} with errorcode {2}.", group, LocalGroup.AdminGroupName, ret);
-                }
+            } catch (System.Management.ManagementException me) {
+                logger.LogError(me.Message);
+                return;
+            } catch (System.Exception e) {
+                logger.LogError(e.Message);
+                return;
             }
         }
 
@@ -367,7 +391,7 @@ namespace MMAService
             var taskCheckTFA = client.CheckTFA(user);
 
             try
-            {
+        {
                 var checkLucatAdmin = taskCheckLucatAdmin.GetAwaiter().GetResult();
                 if (!checkLucatAdmin)
                 {
