@@ -61,9 +61,10 @@ namespace MMAService
             {
                 Variables = new Dictionary<string, CCMCollectionVariable>()
                 {
-                    ["MMAEnabled"] = new CCMCollectionVariable("1"),
-                    ["MMALocalAdminGroup"] = new CCMCollectionVariable(@"DOMAIN\GROUP"),
-                    ["MMAServer"] = new CCMCollectionVariable("verygoodserver.com"),
+                    ["MMAClientEnabled"] = new CCMCollectionVariable("1"),
+                    ["MMALocalAdminGroup"] = new CCMCollectionVariable(Environment.GetEnvironmentVariable("MMA_LOCAL_ADMIN_GROUP")),
+                    ["MMABackendUrl"] = new CCMCollectionVariable(Environment.GetEnvironmentVariable("MMA_BACKEND_URL")),
+                    ["MMAApiKey2"] = new CCMCollectionVariable(Environment.GetEnvironmentVariable("MMA_API_KEY2"))
                 };
             }
         }
