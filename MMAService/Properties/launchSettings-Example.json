@@ -1,0 +1,39 @@
+{
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:50892",
+      "sslPort": 44375
+    }
+  },
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "MMAService": {
+      "commandName": "Project",
+      "launchUrl": "api/values",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "http://localhost:6666"
+    },
+    "MMAService Test": {
+      "commandName": "Project",
+      "commandLineArgs": "--test",
+      "environmentVariables": {
+        "MMA_BACKEND_URL": "https://something.some/somepath",
+        "MMA_API_KEY": "very-secret-indeed",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "MMAService Test/Mock": {
+      "commandName": "Project",
+      "commandLineArgs": "--test",
+      "environmentVariables": {
+        "MMA_BACKEND_URL": "https://something.some/somepath",
+        "MMA_API_KEY": "very-secret-indeed",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

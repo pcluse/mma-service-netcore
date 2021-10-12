@@ -260,3 +260,6 @@ paket-files/
 __pycache__/
 *.pyc
 .vscode/launch.json
+
+# Copy example file and use instead
+MMAService\Properties\launchSettings.json
