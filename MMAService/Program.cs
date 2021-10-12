@@ -13,7 +13,7 @@ using System.Net.Http;
 using System.Timers;
 using System.Net;
 using System.Net.Sockets;
-
+using System.Threading.Tasks;
 
 namespace MMAService
 {
@@ -29,6 +29,7 @@ namespace MMAService
         private static string TemporaryAdmin = "";
         private static DateTime DontCleanUpBefore;
         private static bool netOK = false;
+        private static int expire = 15; // Admin rights will expire
 
 
         public static void Main(string[] args)
@@ -95,9 +96,8 @@ namespace MMAService
                     // We will only listen to localhost
                     options.ListenLocalhost(6666);
                     // There is not much use to have alot of connections
-                    options.Limits.MaxConcurrentConnections = 1;
+                    options.Limits.MaxConcurrentConnections = 2;
                     // Set the maximum size of the request body to a low value
-                    // the maximum size we want to accept is the sizeof AdminController.AdminRequest ((string,domain\username)username, (string, max 6 characters)TwoFactor and (int)expire)
                     options.Limits.MaxRequestBodySize = 200000;
                     options.AddServerHeader = true; //HTTP port
                 })
@@ -166,28 +166,21 @@ namespace MMAService
                         break;
                 }
 
-                var MMAServer = MMAVars.Get("MMAServer");
-                if (String.IsNullOrEmpty(MMAServer))
+                var MMBackendUrl = MMAVars.Get("MMABackendUrl");
+                if (String.IsNullOrEmpty(MMBackendUrl))
                 {
-                    logger.LogWarning("MMAServer not set");
+                    logger.LogWarning("MMABackendUrl not set");
                     return false;
                 }
                 
-                var MMAApiKey = MMAVars.Get("MMAApiKey");
+                var MMAApiKey = MMAVars.Get("MMAApiKey2");
                 if (String.IsNullOrEmpty(MMAApiKey))
                 {
-                    logger.LogWarning("MMAApiKey not set");
-                    return false;
-                }
-                
-                var MMAServerThumbprint = MMAVars.Get("MMAServerThumbprint");
-                if (String.IsNullOrEmpty(MMAServerThumbprint))
-                {
-                    logger.LogWarning("MMAServerThumbprint not set");
+                    logger.LogWarning("MMAApiKey2 not set");
                     return false;
                 }
 
-                client = new RestClient("https://" + MMAServer, MMAServerThumbprint, MMAApiKey);
+                client = new RestClient(MMAVars.Get("MMABackendUrl"), MMAVars.Get("MMAApiKey2"));
             }
             catch (System.Management.ManagementException me) {
                 logger.LogError(me.Message);
@@ -385,15 +378,13 @@ namespace MMAService
                 logger.LogWarning("Check admin for {0}: {1}", user, message);
                 return (false, message);
             }
-            var computerName = Environment.MachineName;
 
-            var taskCheckLucatAdmin = client.CheckLucatAdmin(user);
-            var taskCheckTFA = client.CheckTFA(user);
+            var prerequisitesTask = client.GetPrerequisites(user);
 
             try
         {
-                var checkLucatAdmin = taskCheckLucatAdmin.GetAwaiter().GetResult();
-                if (!checkLucatAdmin)
+                var prerequisites = prerequisitesTask.GetAwaiter().GetResult();
+                if (prerequisites == null || !prerequisites.PLSLucatLocalAdministrator)
                 {
                     logger.LogWarning("User {0} was not allowed to become admin as the right has not been granted.", user);
                     return (false, "You are not allowed to become admin! Did you request the right it in lucat?");
@@ -402,13 +393,12 @@ namespace MMAService
                     //return (true, "");
                 }
                 
-                var checkTFA = taskCheckTFA.GetAwaiter().GetResult();
-                if (!checkTFA)
+                if (prerequisites.preferredService == null)
                 {
-                    return (false, "User has not activated twofactor authentication");
+                    return (false, "User has not activated twofactor authentication or Freja eID");
                 }
-                logger.LogInformation("CheckLucatAdmin: true, CheckTFA: true");
-                return (true, "");
+                logger.LogInformation("CheckLucatAdmin: true, preferredService: {0}", prerequisites.preferredService);
+                return (true, prerequisites.preferredService);
                 
             }
             catch (HttpRequestException e)
@@ -436,7 +426,7 @@ namespace MMAService
         /*
          * This function verifies the twofactor authentication code and adds the user to the group if it was successful
          */
-        internal static (bool, string) AddAdmin(string user, string twofactor, int expire)
+        internal static (bool, string) AddAdmin(string preferredService, string user, string twofactor)
         {
             var (success, message) = PrecheckUserRequest(user);
             if (!success)
@@ -447,14 +437,33 @@ namespace MMAService
 
             //var computerName = Environment.MachineName;
 
-            var task = client.Verify(user, twofactor);
+            Task<bool> task = client.ValidateTotp(user, twofactor);
             try
             {
+                if (preferredService == "totp")
+                {
+                    task = client.ValidateTotp(user, twofactor);
+                } else if (preferredService == "freja")
+                {
+                    task = client.ValidateFreja(user);
+                } else
+                {
+                    logger.LogWarning("{0}: Unknown service used {1}", user, preferredService);
+                    return (false, "Unknown service used.");
+                }
                 var verified = task.GetAwaiter().GetResult();
                 if (!verified)
                 {
-                    logger.LogWarning("{0}: Could not verify your code", user);
-                    return (false, "Could not verify the code, please try again.");
+                    if (preferredService == "totp")
+                    {
+                        logger.LogWarning("{0}: Could not verify totp code", user);
+                        return (false, "Could not verify the code, please try again.");
+                    } else if (preferredService == "freja")
+                    {
+                        logger.LogWarning("{0}: Could not verify your code", user);
+                        return (false, "Could not verify, please try again.");
+                    }
+                    
                 }
             }
             catch (Newtonsoft.Json.JsonReaderException  e)
