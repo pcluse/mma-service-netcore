@@ -34,7 +34,7 @@ namespace MMAService
 
             mvcCoreBuilder
                 .AddFormatterMappings()
-                .AddJsonFormatters()
+                .AddNewtonsoftJson()
                 .AddCors();
 
             services.AddLogging(builder => builder
@@ -44,6 +44,7 @@ namespace MMAService
                     SourceName = "MMA"
                 })
                 .AddDebug());
+            services.AddControllers(options => options.EnableEndpointRouting = false);
         }
 
 
