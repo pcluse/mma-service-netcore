@@ -159,11 +159,11 @@ namespace MMAService
                         logger.LogWarning("Make me admin client has not been enabled for this computer");
                         return false;
                     case "1":
-                        logger.LogWarning("Make me admin client is enabled for this computer");
+                        logger.LogInformation("Make me admin client is enabled for this computer");
                         break;
                     default:
                         logger.LogError("MMAClientEnabled = '{0}' is not a valid value", MMAClientEnabled);
-                        break;
+                        return false;
                 }
 
                 var MMBackendUrl = MMAVars.Get("MMABackendUrl");
