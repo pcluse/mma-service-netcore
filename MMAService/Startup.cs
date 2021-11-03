@@ -1,11 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -16,6 +10,8 @@ namespace MMAService
 {
     public class Startup
     {
+        readonly string MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
+
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
@@ -44,6 +40,16 @@ namespace MMAService
                     SourceName = "MMA"
                 })
                 .AddDebug());
+            services.AddCors(options =>
+            {
+                options.AddPolicy(name: MyAllowSpecificOrigins,
+                                  builder =>
+                                  {
+                                      builder.WithOrigins("https://staging.lth.lu.se",
+                                                          "https://mma.lu.se");
+                                  });
+            });
+
             services.AddControllers(options => options.EnableEndpointRouting = false);
         }
 
@@ -63,7 +69,7 @@ namespace MMAService
             // Doesn't use https in application
             //app.UseHttpsRedirection();
 
-            
+            app.UseCors(MyAllowSpecificOrigins);
             app.UseMvc();
         }
     }
