@@ -19,18 +19,11 @@ namespace MMAService
         public bool validated { get; set; }
     }
 
-    public interface IRestClient
-    {
-        Task<PrerequisitesReply> GetPrerequisites(string username);
-        Task<bool> ValidateFreja(string username);
-        Task<bool> ValidateTotp(string username, string twofactor);
-    }
-
-    public class RestClient : IRestClient
+    public class Backend
     {
         private HttpClient client;
 
-        public RestClient(string baseAddress, string apiKey)
+        public Backend(string baseAddress, string apiKey)
         {
             client = new HttpClient();
             client.DefaultRequestHeaders.Add("X-API-KEY", apiKey);
@@ -78,6 +71,15 @@ namespace MMAService
             string RequestUri = String.Format("validate/totp/{0}/{1}", username, twofactor);
 
             var response = await client.GetAsync(RequestUri);
+            response.EnsureSuccessStatusCode();
+            var responseObject = await response.Content.ReadAsAsync<ValidateReply>();
+            return responseObject.validated;
+        }
+        public async Task<bool> ValidateTechnician(string username, string technicianUid, string computerName, bool isStudentComputer)
+        {
+            username = RemoveDomain(username);
+
+            var response = await client.GetAsync("/validate/technician");
             response.EnsureSuccessStatusCode();
             var responseObject = await response.Content.ReadAsAsync<ValidateReply>();
             return responseObject.validated;

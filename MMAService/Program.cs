@@ -16,7 +16,7 @@ namespace MMAService
 {
     public class Program
     {
-        private static RestClient client;
+        private static Backend backend;
         internal static ILogger logger;
         internal static CCMCollectionVariables MMAVars;
         private static bool SharedPC = false;
@@ -178,7 +178,7 @@ namespace MMAService
                     return false;
                 }
 
-                client = new RestClient(MMAVars.Get("MMABackendUrl"), MMAVars.Get("MMAApiKey2"));
+                backend = new Backend(MMAVars.Get("MMABackendUrl"), MMAVars.Get("MMAApiKey2"));
             }
             catch (System.Management.ManagementException me) {
                 logger.LogError(me.Message);
@@ -369,7 +369,7 @@ namespace MMAService
                 return (false, message);
             }
 
-            var prerequisitesTask = client.GetPrerequisites(user);
+            var prerequisitesTask = backend.GetPrerequisites(user);
 
             try
         {
@@ -423,7 +423,7 @@ namespace MMAService
 
             try
             {
-                var task = client.ValidateTotp(user, twofactor);
+                var task = backend.ValidateTotp(user, twofactor);
                 
                 var validated = task.GetAwaiter().GetResult();
                 if (!validated)
@@ -466,7 +466,7 @@ namespace MMAService
 
             try
             {
-                var task = client.ValidateFreja(user);
+                var task = backend.ValidateFreja(user);
 
                 var validated = task.GetAwaiter().GetResult();
                 if (!validated)
@@ -498,7 +498,7 @@ namespace MMAService
             var user = Computer.GetLoggedInUsers()[0];
             try
             {
-                var task = client.ValidateFreja(technicianUid);
+                var task = backend.ValidateFreja(technicianUid);
 
                 var validated = task.GetAwaiter().GetResult();
                 if (!validated)
