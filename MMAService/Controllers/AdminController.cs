@@ -3,9 +3,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MMAService.Controllers
 {
-    public class PrerequisiteReply
+    public class PrerequisitesReply
     {
         public string preferredService { get; set; }
+        public string message { get; set; }
+    }
+
+    public class PrerequisitesTechnicianReply
+    {
         public string message { get; set; }
     }
 
@@ -23,39 +28,91 @@ namespace MMAService.Controllers
     // ControllerBase instead of Controller because minimal framework
     public class AdminController : ControllerBase
     {
-        [HttpGet("/prerequisite/{uid}")]
-        public ActionResult<PrerequisiteReply> GetPrerequisiteUid(string uid)
+        [HttpGet("/prerequisites")]
+        public ActionResult<PrerequisitesReply> GetPrerequisites()
         {
-            Console.WriteLine("uid {0}", uid);
-            var (success, message) = Program.CheckCanBecomeAdmin(uid);
+            if (! Program.IsMMAPossible())
+            {
+                Response.StatusCode = 403;
+                return new PrerequisitesReply() { message = "error.not_allowed_on_this_computer" };
+            }
+            var (success, message) = Program.CheckPrerequisites();
             if (!success)
             {
-                return new PrerequisiteReply() { message = message };
+                Response.StatusCode = 403;
+                return new PrerequisitesReply() { message = message };
 
             }
-            return new PrerequisiteReply() { preferredService = message };
+            return new PrerequisitesReply() { preferredService = message };
         }
 
-        [HttpGet("/validate/totp/{uid}/{code}")]
-        public ActionResult<ValidateReply> GetValidateTotpUidCode(string uid, string code)
+        [HttpGet("/validate/totp/{code}")]
+        public ActionResult<ValidateReply> GetValidateTotpCode(string code)
         {
-            var (success, message) = Program.AddAdmin("totp", uid, code);
+            if (!Program.IsMMAPossible())
+            {
+                Response.StatusCode = 403;
+                return new ValidateReply() { message = "error.not_allowed_on_this_computer" };
+            }
+            var (success, validated, message) = Program.ValidateTotp(code);
             if (!success)
             {
+                Response.StatusCode = 403;
                 return new ValidateReply() { validated = false, message = message };
             }
-            return new ValidateReply() { validated = true };
+            return new ValidateReply() { validated = validated };
         }
 
-        [HttpGet("/validate/freja/{uid}")]
-        public ActionResult<ValidateReply> GetValidateFrejaUid(string uid)
+        [HttpGet("/validate/freja")]
+        public ActionResult<ValidateReply> GetValidateFreja()
         {
-            var (success, message) = Program.AddAdmin("freja", uid, "");
+            if (!Program.IsMMAPossible())
+            {
+                Response.StatusCode = 403;
+                return new ValidateReply() { message = "error.not_allowed_on_this_computer" };
+            }
+            var (success, validated, message) = Program.ValidateFreja();
             if (!success)
             {
+                Response.StatusCode = 403;
                 return new ValidateReply() { validated = false, message = message };
             }
-            return new ValidateReply() { validated = success };
+            return new ValidateReply() { validated = validated };
+        }
+
+        [HttpGet("/prerequisites/technician")]
+        public ActionResult<PrerequisitesTechnicianReply> GetPrerequitesTechnician()
+        {
+            if (!Program.IsMMAPossible())
+            {
+                Response.StatusCode = 403;
+                return new PrerequisitesTechnicianReply() { message = "error.not_allowed_on_this_computer" };
+            }
+            var user = Computer.GetLoggedInUsers()[0];
+            if (LocalGroup.IsAdmin(user))
+            {
+                Response.StatusCode = 403;
+                return new PrerequisitesTechnicianReply() { message = "error.user_already_admin" };
+            }
+
+            return new PrerequisitesTechnicianReply();
+        }
+
+        [HttpGet("/validate/technician/{technicianUid}")]
+        public ActionResult<ValidateReply> GetValidateTechnician(string technicianUid)
+        {
+            if (!Program.IsMMAPossible())
+            {
+                Response.StatusCode = 403;
+                return new ValidateReply() { message = "error.not_allowed_on_this_computer" };
+            }
+            var (success, validated, message) = Program.ValidateTechnician(technicianUid);
+            if (!success)
+            {
+                Response.StatusCode = 403;
+                return new ValidateReply() { validated = false, message = message };
+            }
+            return new ValidateReply() { validated = validated };
         }
     }
 }

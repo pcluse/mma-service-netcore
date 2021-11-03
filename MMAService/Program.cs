@@ -11,9 +11,6 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Timers;
-using System.Net;
-using System.Net.Sockets;
-using System.Threading.Tasks;
 
 namespace MMAService
 {
@@ -30,6 +27,7 @@ namespace MMAService
         private static DateTime DontCleanUpBefore;
         private static bool netOK = false;
         private static int expire = 15; // Admin rights will expire
+        private static Dictionary<string, PrerequisitesReply> userToPrerequisites = new Dictionary<string, PrerequisitesReply>();
 
 
         public static void Main(string[] args)
@@ -94,9 +92,9 @@ namespace MMAService
                 .UseKestrel(options =>
                 {
                     // We will only listen to localhost
-                    options.ListenLocalhost(6666);
+                    options.ListenLocalhost(16666);
                     // There is not much use to have alot of connections
-                    options.Limits.MaxConcurrentConnections = 2;
+                    // options.Limits.MaxConcurrentConnections = 10;
                     // Set the maximum size of the request body to a low value
                     options.Limits.MaxRequestBodySize = 200000;
                     options.AddServerHeader = true; //HTTP port
@@ -147,7 +145,7 @@ namespace MMAService
                 logger.LogInformation(string.Format("Network is {0}, wait {1} milliseconds...",netOK,netTimer.Interval));
             }
         }
-        internal static bool IsAdminPossible() {
+        internal static bool IsMMAPossible() {
             try {
                 var MMAClientEnabled = MMAVars.Get("MMAClientEnabled");
                 switch (MMAClientEnabled)
@@ -319,35 +317,20 @@ namespace MMAService
 
         private static (bool, string) PrecheckUserRequest(string user)
         {
-            if (! IsAdminPossible())
-            {
-                return (false, "Make me admin is not allowed on this computer");
-            }
             // Does this go nested groups? Nope!
             if (LocalGroup.IsAdmin(user))
             {
                 // Need better handling of messages as this is not an error.
                 // If we return it as true (not an error) we can not distinguish it from other success messages.
                 //return (true, "You are already admin");
-                return (false, "Your account is already a member of the administrators group on this computer.");
+                return (false, "error.already_admin");
             }
 
-            var loggedOnUsers = Computer.GetLoggedInUsers();
-            if (loggedOnUsers.Count != 1)
-            {
-                // Should this be banned if a computer is used by multiple users?
-                return (false, "Multiple users are logged on to this computer.\nElevation is not allowed when other users are logged on.");
-            }
-            if (!loggedOnUsers.Contains(user))
-            {
-                // This should only happen if someone is trying to use this service without the MMA-client
-                return (false, "The specified user is not logged into this computer.");
-            }
             if (isTest)
             {
                 return (true, "");
             }
-            List<string> owners = null;
+            List<string> owners;
             try
             {
                 owners = Computer.GetPrimaryUsers();
@@ -355,23 +338,30 @@ namespace MMAService
             catch (System.Management.ManagementException e)
             {
                 logger.LogError("Missing SCCM namespace.{0}", e.Message);
-                return (false, "Unable to determine the owner of this computer.");
+                return (false, "error.generic_error");
             }
             string UpperUsername = user.ToUpper();
             if (owners.Count() > 0 && !owners.Contains(UpperUsername))
             {
                 // First one in list should be owner, maybe change GetPrimaryUsers to GetOwner?
-                logger.LogWarning("User {0} tried to become admin but was denied because the user is not the owner of this computer.", user);
-                return (false, String.Format("Only the user set as owner can become admin of this computer.\nCurrent owner is {0}.", owners[0]));
+                logger.LogWarning("User {0} is not owner, owner is {1}", user, owners[0]);
+                return (false, "error.not_owner");
             }
             if (!netOK) {
-                return (false, "Network is not available right now.\nTry again when network connectivity has been restored.");
+                return (false, "error.network_down");
             }
             return (true, "");
         }
 
-        internal static (bool, string) CheckCanBecomeAdmin(string user)
+        internal static (bool, string) CheckPrerequisites()
         {
+            var loggedOnUsers = Computer.GetLoggedInUsers();
+            if (loggedOnUsers.Count != 1)
+            {
+                // Should this be banned if a computer is used by multiple users?
+                return (false, "error.multiple_logged_in");
+            }
+            var user = loggedOnUsers[0];
             var (success, message) = PrecheckUserRequest(user);
             if (! success)
             {
@@ -384,18 +374,23 @@ namespace MMAService
             try
         {
                 var prerequisites = prerequisitesTask.GetAwaiter().GetResult();
-                if (prerequisites == null || !prerequisites.PLSLucatLocalAdministrator)
+                if (userToPrerequisites.ContainsKey(user)) {
+                    userToPrerequisites[user] = prerequisites;
+                } else
                 {
-                    logger.LogWarning("User {0} was not allowed to become admin as the right has not been granted.", user);
-                    return (false, "You are not allowed to become admin! Did you request the right it in lucat?");
-                    // We need to handle this! API returns false if user is not 2FA activated.
-                    // Demo mode below
-                    //return (true, "");
+                    userToPrerequisites.Add(user, prerequisites);
+                }
+                
+                if (!prerequisites.PLSLucatLocalAdministrator)
+                {
+                    logger.LogWarning("User {0} must apply for admin permission in lucat", user);
+                    return (false, "error.not_applied_for_admin_permission_pls");
                 }
                 
                 if (prerequisites.preferredService == null)
                 {
-                    return (false, "User has not activated twofactor authentication or Freja eID");
+                    logger.LogWarning("User {0} has neither strong password or Freja eID activated", user);
+                    return (false, "error.no_service_configured");
                 }
                 logger.LogInformation("CheckLucatAdmin: true, preferredService: {0}", prerequisites.preferredService);
                 return (true, prerequisites.preferredService);
@@ -404,72 +399,43 @@ namespace MMAService
             catch (HttpRequestException e)
             {
                 logger.LogWarning("Error for {0}: {1}", user, e.ToString());
-                return (false, "Are you connected to internet?");
+                return (false, "error.service_down");
             }
         }
 
-        public static string[] GetLocalIPAddresses() {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            string[] result = new string[host.AddressList.Length];
-            int i = 0;
-            foreach (var ip in host.AddressList)
-            {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    result[i] = ip.ToString();
-                }
-                i++;
-            }
-            return result;
-            //throw new Exception("No network adapters with an IPv4 address in the system!");
-        }
+        
         /*
          * This function verifies the twofactor authentication code and adds the user to the group if it was successful
          */
-        internal static (bool, string) AddAdmin(string preferredService, string user, string twofactor)
+        internal static (bool, bool, string) ValidateTotp(string twofactor)
         {
-            var (success, message) = PrecheckUserRequest(user);
-            if (!success)
+            var user = Computer.GetLoggedInUsers()[0];
+            var prerequisites = userToPrerequisites[user];
+            if (prerequisites == null)
             {
-                logger.LogWarning("Add admin for {0}: {1}", user, message);
-                return (false, message);
+                logger.LogWarning("User {0} prerequisites not found", user);
+                return (false, false, "error.prerequisites");
+            }
+            if (!prerequisites.PLSLucatLocalAdministrator)
+            {
+                return (false, false, "error.not_applied_for_admin_permission_pls");
             }
 
-            //var computerName = Environment.MachineName;
-
-            Task<bool> task = client.ValidateTotp(user, twofactor);
             try
             {
-                if (preferredService == "totp")
+                var task = client.ValidateTotp(user, twofactor);
+                
+                var validated = task.GetAwaiter().GetResult();
+                if (!validated)
                 {
-                    task = client.ValidateTotp(user, twofactor);
-                } else if (preferredService == "freja")
-                {
-                    task = client.ValidateFreja(user);
-                } else
-                {
-                    logger.LogWarning("{0}: Unknown service used {1}", user, preferredService);
-                    return (false, "Unknown service used.");
-                }
-                var verified = task.GetAwaiter().GetResult();
-                if (!verified)
-                {
-                    if (preferredService == "totp")
-                    {
-                        logger.LogWarning("{0}: Could not verify totp code", user);
-                        return (false, "Could not verify the code, please try again.");
-                    } else if (preferredService == "freja")
-                    {
-                        logger.LogWarning("{0}: Could not verify your code", user);
-                        return (false, "Could not verify, please try again.");
-                    }
-                    
+                    logger.LogWarning("{0}: Could not verify totp code", user);
+                    return (true, false, "");
                 }
             }
             catch (Newtonsoft.Json.JsonReaderException  e)
             {
                 logger.LogWarning("{0}: Could not parse response, error {1}", user, e.ToString());
-                return (false, "Could not verify the code. Service not available?");
+                return (false, false, "error.generic_error");
             }
             /* catch ( e)
             {
@@ -479,9 +445,84 @@ namespace MMAService
             var wasAdded = ExpireFromAdminGroup(user, expire);
             if (!wasAdded)
             {
-                return (false, "Couldn't make you an admin");
+                return (false, false, "error.valid_code_but_not_made_admin");
             }
-            return (true, "");
+            return (true, true, "");
+        }
+
+        internal static (bool, bool, string) ValidateFreja()
+        {
+            var user = Computer.GetLoggedInUsers()[0];
+            var prerequisites = userToPrerequisites[user];
+            if (prerequisites == null)
+            {
+                logger.LogWarning("User {0} prerequisites not found", user);
+                return (false, false, "error.prerequisites");
+            }
+            if (!prerequisites.PLSLucatLocalAdministrator)
+            {
+                return (false, false, "error.not_applied_for_admin_permission_pls");
+            }
+
+            try
+            {
+                var task = client.ValidateFreja(user);
+
+                var validated = task.GetAwaiter().GetResult();
+                if (!validated)
+                {
+                    logger.LogWarning("{0}: Could not validate freja", user);
+                    return (true, false, "");
+                }
+            }
+            catch (Newtonsoft.Json.JsonReaderException e)
+            {
+                logger.LogWarning("{0}: Could not parse response, error {1}", user, e.ToString());
+                return (false, false, "error.generic_error");
+            }
+            /* catch ( e)
+            {
+                logger.LogWarning("{0}: Could not verify the code, error {1}", user, e.ToString());
+                return (false, "Could not verify the code. Are you connected to internet?");
+            } */
+            var wasAdded = ExpireFromAdminGroup(user, expire);
+            if (!wasAdded)
+            {
+                return (false, false, "error.validated_but_not_made_admin");
+            }
+            return (true, true, "");
+        }
+
+        internal static (bool, bool, string) ValidateTechnician(string technicianUid)
+        {
+            var user = Computer.GetLoggedInUsers()[0];
+            try
+            {
+                var task = client.ValidateFreja(technicianUid);
+
+                var validated = task.GetAwaiter().GetResult();
+                if (!validated)
+                {
+                    logger.LogWarning("{0}: Could not validate freja", user);
+                    return (true, false, "");
+                }
+            }
+            catch (Newtonsoft.Json.JsonReaderException e)
+            {
+                logger.LogWarning("{0}: Could not parse response, error {1}", user, e.ToString());
+                return (false, false, "error.generic_error");
+            }
+            /* catch ( e)
+            {
+                logger.LogWarning("{0}: Could not verify the code, error {1}", user, e.ToString());
+                return (false, "Could not verify the code. Are you connected to internet?");
+            } */
+            var wasAdded = ExpireFromAdminGroup(user, expire);
+            if (!wasAdded)
+            {
+                return (false, false, "error.validated_but_not_made_admin");
+            }
+            return (true, true, "");
         }
     }
 }
